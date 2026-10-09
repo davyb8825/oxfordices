@@ -554,14 +554,10 @@ a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var
       <p>Reviews from events across Oxfordshire.</p>
     </div>
 
-    <!-- REAL REVIEWS ONLY. Paste approved ones in using this pattern:
-    <div class="rev">
-      <div class="stars">★★★★★</div>
-      <p>Their words here.</p>
-      <cite>Name — event, town</cite>
-    </div>
-    Delete this comment block once there are three or four live. -->
-    <div class="revgrid" id="revgrid"></div>
+    <!-- Approved reviews are added automatically between these markers
+         by the review script. Don't remove or rename the markers. -->
+    <div class="revgrid" id="revgrid"><!-- REVIEWS-START -->
+    <!-- REVIEWS-END --></div>
 
     <div class="revform">
       <h3>Been to one of our events? 💬</h3>
@@ -586,11 +582,16 @@ a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var
           </div>
           <div class="field full">
             <label for="rText">Your review 💬</label>
-            <textarea id="rText" name="rText" required></textarea>
+            <textarea id="rText" name="rText" maxlength="1500" required></textarea>
+          </div>
+          <!-- Spam trap: hidden from people, bots fill it in -->
+          <div style="position:absolute;left:-9999px" aria-hidden="true">
+            <label for="rWebsite">Website</label>
+            <input id="rWebsite" name="rWebsite" type="text" tabindex="-1" autocomplete="off">
           </div>
         </div>
-        <button class="btn btn-primary" type="submit">Send my review ⭐</button>
-        <p class="smallnote" id="revNote">This opens your email app with the review ready to send.</p>
+        <button class="btn btn-primary" type="submit" id="revBtn">Send my review ⭐</button>
+        <p class="smallnote" id="revNote">Every review is read before it goes on the site.</p>
       </form>
     </div>
   </div>
@@ -801,37 +802,62 @@ document.getElementById('yr').textContent = new Date().getFullYear();
   update();
 })();
 
-/* Review form -> opens the visitor's email app, addressed to Darren.
-   Nothing is published automatically: Darren reads each one, then the good
-   ones get pasted into the reviews grid above by hand. */
+/* Review form -> sends the review to the approval script (Google Apps Script).
+   Darren gets an email, taps Publish, and the review is written into this
+   page automatically. Paste the script's web app URL below. Until it is set,
+   the form falls back to opening the visitor's email app. */
+var REVIEW_ENDPOINT = 'https://script.google.com/macros/s/AKfycbwCpEsCYwbt92a4WuBigk-KgKKZOEvfWWity_vCTR41tDZe2Hnu5regYYVoidClvBWq/exec';
+
 (function () {
   var f = document.getElementById('reviewForm');
   var note = document.getElementById('revNote');
+  var btn = document.getElementById('revBtn');
   var grid = document.getElementById('revgrid');
 
   // Hide the empty grid until there is at least one real review in it
   if (grid && grid.children.length === 0) grid.style.display = 'none';
 
+  function say(msg) { note.textContent = msg; note.style.color = '#C9316C'; }
+
   f.addEventListener('submit', function (e) {
     e.preventDefault();
     if (!f.rName.value.trim() || !f.rText.value.trim()) {
-      note.textContent = 'Please add your name and a few words before sending.';
-      note.style.color = '#C9316C';
+      say('Please add your name and a few words before sending.');
       (f.rName.value.trim() ? f.rText : f.rName).focus();
       return;
     }
-    var body = [
-      'Name: ' + f.rName.value,
-      'Rating: ' + f.rStars.value,
-      'Event: ' + (f.rEvent.value || 'not given'),
-      '',
-      f.rText.value
-    ].join('\n');
-    window.location.href = 'mailto:Oxford.ices@icloud.com'
-      + '?subject=' + encodeURIComponent('Website review from ' + f.rName.value)
-      + '&body=' + encodeURIComponent(body);
-    note.textContent = 'Opening your email app now — just press send. Thank you!';
-    note.style.color = '#C9316C';
+
+    // Fallback while the script isn't connected yet
+    if (REVIEW_ENDPOINT.indexOf('https://script.google.com/') !== 0) {
+      var body = ['Name: ' + f.rName.value, 'Rating: ' + f.rStars.value,
+                  'Event: ' + (f.rEvent.value || 'not given'), '', f.rText.value].join('\n');
+      window.location.href = 'mailto:Oxford.ices@icloud.com'
+        + '?subject=' + encodeURIComponent('Website review from ' + f.rName.value)
+        + '&body=' + encodeURIComponent(body);
+      say('Opening your email app now — just press send. Thank you!');
+      return;
+    }
+
+    btn.disabled = true;
+    say('Sending...');
+    fetch(REVIEW_ENDPOINT, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        name: f.rName.value,
+        stars: parseInt(f.rStars.value, 10),
+        event: f.rEvent.value,
+        text: f.rText.value,
+        website: f.rWebsite.value
+      })
+    }).then(function () {
+      f.reset();
+      say('Thank you! Your review has been sent and will appear once it has been checked.');
+    }).catch(function () {
+      btn.disabled = false;
+      say('Sorry, that didn’t send. Please check your connection and try again.');
+    });
   });
 })();
 
